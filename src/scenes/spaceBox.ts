@@ -3,7 +3,6 @@ import { Scene } from "@babylonjs/core/scene";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
-import { SphereBuilder } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { CreateSceneClass } from "../createScene";
 
@@ -27,9 +26,6 @@ export class SpaceBox implements CreateSceneClass {
         // This creates a basic Babylon Scene object (non-mesh)
         const scene = new Scene(engine);
 
-        // scene.fogMode = Scene.FOGMODE_EXP;
-        // scene.fogColor = new Color3(0.9, 0.9, 0.85);
-        // scene.fogDensity = 0.1;
         scene.clearColor = new Color4(0.1, 0.05, 0.2);
         
         scene.fogMode = Scene.FOGMODE_EXP;
@@ -45,10 +41,6 @@ export class SpaceBox implements CreateSceneClass {
         camera.upperRadiusLimit = 500;
         camera.upperBetaLimit = Math.PI / 3;
 
-        scene.registerBeforeRender(() => {
-            camera.target.y = 0;
-        });
-
         // This attaches the camera to the canvas
         camera.attachControl(canvas, true);
 
@@ -60,6 +52,10 @@ export class SpaceBox implements CreateSceneClass {
         const items = Array.from({ length:50 }, () => (new Item(scene)));
         const container = new Container(scene);
         container.setItems(items);
+
+        const { width, height } = container.size;
+        camera.position.set(width / 2, 500, height * 2);
+        camera.target.set(width / 2, 0, -height / 2);
 
         return scene;
     };

@@ -1,6 +1,8 @@
 import earcut from "earcut";
-import { Color3, Mesh, MeshBuilder, Path2, PlaneDragGizmo, Scene, StandardMaterial, TransformNode, Vector3 } from "@babylonjs/core";
+import { Color3, Mesh, MeshBuilder, Path2, PlaneDragGizmo, PointerInfo, Scene, StandardMaterial, TransformNode, Vector3 } from "@babylonjs/core";
+
 import { Item } from "./item";
+import { Label } from "./label";
 
 const THICKNESS = 2;
 const CORNER_SIZE = 2;
@@ -8,18 +10,29 @@ const CORNER_SEGMENTS = 36;
 const DEPTH = 3;
 const HANDLE_RADIUS = 5;
 const HANDLE_PADDING = -1;
+const HANDLE_ALPHA = .6;
+const HANDLE_RESTING_COLOR = new Color3(.1, .1, .25);
+const HANDLE_CLICKED_COLOR = new Color3(.1, .1, .5);
+const LABEL_PADDING = 10;
 
 const DEFAULT_MIN_SIZE = 10;
+
+interface Size {
+    width: number;
+    height: number;
+}
 
 export class Container {
 
     private scene: Scene;
     private root: TransformNode;
+    private labelSlot: TransformNode;
     private wall: Mesh;
-    private handle: TransformNode;
+    private wallMaterial: StandardMaterial;
+    private handle: Mesh;
     private items: Item[] = [];
     private minimumSize = DEFAULT_MIN_SIZE;
-    private size = { width: 100, height: 50 }
+    private _size: Size = { width: 100, height: 50 }
 
     constructor(scene: Scene) {
         this.scene = scene;
@@ -27,6 +40,14 @@ export class Container {
         this.root = new TransformNode("root", scene);
 
         this.handle = MeshBuilder.CreateSphere("containerHandle", { diameter: HANDLE_RADIUS * 2 }, scene);
+        
+        const handleMaterial = new StandardMaterial("handle material", scene);
+        handleMaterial.diffuseColor = new Color3(0, 1, 1);
+        handleMaterial.specularColor = new Color3(0.5, 0.6, .1);
+        handleMaterial.emissiveColor = HANDLE_RESTING_COLOR;
+        handleMaterial.alpha = HANDLE_ALPHA;
+        this.handle.material = handleMaterial;
+
         this.handle.parent = this.root
         this.fitHandleToSize();
 
@@ -45,7 +66,37 @@ export class Container {
 
         gizmo.dragBehavior.onDragObservable.add(() => {
             this.scaleByHandle();
-        })
+        });
+
+        gizmo.dragBehavior.onDragStartObservable.add(() => {
+            handleMaterial.alpha = 1;
+            handleMaterial.emissiveColor = HANDLE_CLICKED_COLOR;
+        });
+
+        gizmo.dragBehavior.onDragEndObservable.add(() => {
+            handleMaterial.alpha = HANDLE_ALPHA;
+            handleMaterial.emissiveColor = HANDLE_RESTING_COLOR;
+        });
+
+        gizmo.gizmoLayer.utilityLayerScene.onPointerObservable.add((pointerInfo: PointerInfo) => {
+            const isHovered = pointerInfo.pickInfo && (gizMesh === pointerInfo.pickInfo.pickedMesh);
+            // Update material based on if it's being hovered on
+            if(isHovered) {
+                handleMaterial.alpha = 1;
+            } else {
+                handleMaterial.alpha = HANDLE_ALPHA;
+            }
+        });
+        
+        this.labelSlot = new TransformNode("labelSlot", scene);
+        this.labelSlot.parent = this.root;
+        const labelText = new Label("Container");
+        labelText.input.linkWithMesh(this.labelSlot);
+
+        this.wallMaterial = new StandardMaterial("wall material", scene);
+        this.wallMaterial.diffuseColor = new Color3(0, 1, 1);
+        this.wallMaterial.specularColor = new Color3(0.5, 0.6, .1);
+        this.wallMaterial.emissiveColor = new Color3(.1, .1, .25);
 
         this.wall = this.scaleByHandle();
     }
@@ -67,8 +118,8 @@ export class Container {
     }
 
     setSize(width: number, height: number): Mesh {
-        this.size.width = width;
-        this.size.height = height;
+        this._size.width = width;
+        this._size.height = height;
 
         this.positionItems();
 
@@ -87,6 +138,7 @@ export class Container {
             point.z -= offset;
         }
 
+        // TODO reuse mesh
         this.wall = MeshBuilder.ExtrudePolygon(
             "wall",
             {
@@ -101,11 +153,15 @@ export class Container {
         this.wall.position.y = DEPTH;
         this.wall.parent = this.root;
 
+        this.wall.material = this.wallMaterial;
+
+        this.labelSlot.position.set(width / 2, DEPTH / 2, -height - LABEL_PADDING);
+
         return this.wall;
     }
 
     fitHandleToSize(): void {
-        const { width, height } = this.size;
+        const { width, height } = this._size;
         this.handle.position.set(
             width + HANDLE_PADDING + HANDLE_RADIUS,
             DEPTH / 2,
@@ -132,7 +188,7 @@ export class Container {
     private positionItems(): void {
         if (this.items.length !== 0) {
             const itemSize = this.items[0].size;
-            const { width, height } = this.size;
+            const { width, height } = this._size;
 
             const xInnerSpace = width - 2 * THICKNESS;
             const maxColumns = Math.floor(xInnerSpace / itemSize);
@@ -144,33 +200,32 @@ export class Container {
             const rowsNeeded = Math.ceil(this.items.length / columns);
             const rows = Math.min(maxRows, rowsNeeded);
 
+            const columnSpacing = xInnerSpace / columns;
+            const rowSpacing = zInnerSpace / rows;
+
             const xStart = itemSize / 2 + THICKNESS;
             const zStart = -xStart;
 
             let itemIndex = 0;
             for (let row = 0; row < rows && itemIndex < this.items.length; row++) {
                 for (let column = 0; column < columns && itemIndex < this.items.length; column++, itemIndex++) {
-                    const { position } = this.items[itemIndex].root;
-                    const { material } = this.items[itemIndex].mesh;
-                    position.x = column * itemSize + xStart;
+                    const item = this.items[itemIndex];
+                    const { position } = item.root;
+                    position.x = column * columnSpacing + xStart;
                     position.y = 0;
-                    position.z = row * -itemSize + zStart;
-                    if (material) {
-                        material.alpha = 1;
-                    }
+                    position.z = row * -rowSpacing + zStart;
+                    item.alpha = 1;
                 }
             }
 
             // stack the rest and fade out
             for (let stackIndex = 1; itemIndex < this.items.length; itemIndex++, stackIndex++) {
-                const { position } = this.items[itemIndex].root;
-                const { material } = this.items[itemIndex].mesh;
+                const item = this.items[itemIndex];
+                const { position } = item.root;
                 position.x = xStart;
                 position.z = zStart;
-                position.y = itemSize * stackIndex;
-                if (material) {
-                    material.alpha = 2 / stackIndex;
-                }
+                position.y = itemSize / 1.5 * stackIndex ;
+                item.alpha = 2 / stackIndex;
             }
         }
     }
@@ -193,6 +248,10 @@ export class Container {
         path.addArcTo(0, -bevelMidPoint, 0, -cornerSize, CORNER_SEGMENTS);
 
         return path.getPoints().map(v => new Vector3(v.x, 0, v.y));
+    }
+
+    public get size(): Size {
+        return this._size;
     }
 
 }

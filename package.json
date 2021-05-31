@@ -5,6 +5,7 @@
     "main": "index.ts",
     "dependencies": {
         "@babylonjs/core": "5.0.0-alpha.24",
+        "@babylonjs/gui": "5.0.0-alpha.24",
         "@babylonjs/loaders": "5.0.0-alpha.24",
         "@babylonjs/materials": "5.0.0-alpha.24",
         "ammo.js": "github:kripken/ammo.js",
